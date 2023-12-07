@@ -1,0 +1,12 @@
+[package]
+name = "zk_halo2_playground"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ff = "0.13.0"
+halo2_proofs = { git = "https://github.com/zcash/halo2.git" }
+try_collect = {git = "https://github.com/Gorzorg/try_collect.git" }
+
+[dev-dependencies]
+rand = "0.8.5"
