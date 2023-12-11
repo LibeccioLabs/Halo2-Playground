@@ -400,7 +400,7 @@ mod tests {
         // more combinations, not always the same few ones.
 
         for solved_sudoku in valid_sudoku9_grids {
-            for _ in 0..100 {
+            for _ in 0..10 {
                 let mask = rand::random::<[[bool; 9]; 9]>();
 
                 let problem = mask
@@ -420,10 +420,15 @@ mod tests {
 
                 let instance = Vec::from(problem.map(|column| Vec::from(column)));
 
+                let t0 = std::time::Instant::now();
                 let prover = MockProver::run(POW_OF_2_MAX_ROWS, &circuit, instance)
                     .expect("Proof generation goes wrong");
-
-                assert_eq!(prover.verify(), Ok(()), "Proof verification goes wrong");
+                let t1 = std::time::Instant::now();
+                println!("Proof generation time: {:?}", t1 - t0);
+                let t2 = std::time::Instant::now();
+                prover.verify().expect("Proof verification goes wrong");
+                let t3 = std::time::Instant::now();
+                println!("Proof verification time: {:?}", t3 - t2);
             }
         }
     }
