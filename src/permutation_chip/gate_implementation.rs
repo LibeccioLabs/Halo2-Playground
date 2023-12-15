@@ -1,7 +1,7 @@
 use super::*;
 
 impl<const N_OBJECTS: usize, F: ff::Field> PermutationChip<N_OBJECTS, F> {
-    pub fn construct(config: PConfig<N_OBJECTS>) -> Self {
+    pub fn construct(config: <Self as halo2_proofs::circuit::Chip<F>>::Config) -> Self {
         Self {
             config,
             _marker: std::marker::PhantomData,

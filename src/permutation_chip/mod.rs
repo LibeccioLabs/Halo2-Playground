@@ -1,9 +1,9 @@
-use super::Number;
+use crate::{utilities::DivModCounter, Number};
 
 use std::cell::RefCell;
 
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, Value},
+    circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -47,7 +47,6 @@ impl<const N_OBJECTS: usize> PConfig<N_OBJECTS> {
     }
 }
 
-// TODO: I have no clue what this trait does yet.
 impl<const N_OBJECTS: usize, F: ff::Field> halo2_proofs::circuit::Chip<F>
     for PermutationChip<N_OBJECTS, F>
 {
@@ -59,52 +58,6 @@ impl<const N_OBJECTS: usize, F: ff::Field> halo2_proofs::circuit::Chip<F>
     }
     fn loaded(&self) -> &Self::Loaded {
         &()
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct DivModCounter<const MOD: usize, const RUNTIME_MOD: bool = false> {
-    div: usize,
-    remainder: usize,
-    modulo: usize,
-}
-
-impl<const MOD: usize, const RUNTIME_MOD: bool> DivModCounter<MOD, RUNTIME_MOD> {
-    fn new_const_mod(div: usize, remainder: usize) -> Self {
-        assert!(MOD != 0, "divisor cannot be 0");
-        Self {
-            div,
-            remainder: remainder % MOD,
-            modulo: 0,
-        }
-    }
-
-    fn new_runtime_mod(div: usize, remainder: usize, modulo: usize) -> Self {
-        assert!(modulo != 0, "divisor cannot be 0");
-        Self {
-            div,
-            remainder: remainder % modulo,
-            modulo,
-        }
-    }
-}
-
-impl<const MOD: usize, const RUNTIME_MOD: bool> Iterator for DivModCounter<MOD, RUNTIME_MOD> {
-    type Item = (usize, usize);
-    fn next(&mut self) -> Option<Self::Item> {
-        self.remainder += 1;
-        if self.remainder == if RUNTIME_MOD { self.modulo } else { MOD } {
-            self.remainder = 0;
-            self.div += 1;
-        }
-        Some((self.div, self.remainder))
-    }
-}
-
-impl<F: ff::Field> std::ops::Deref for Number<F> {
-    type Target = AssignedCell<F, F>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 

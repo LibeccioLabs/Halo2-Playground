@@ -1,6 +1,6 @@
 use crate::{
-    permutation_chip::PermutationChip, region_sequence_assignment::RegionSequenceAssignment,
-    sudoku_problem_chip::SudokuProblemChip, Number,
+    permutation_chip::PermutationChip, sudoku_problem_chip::SudokuProblemChip,
+    utilities::RegionSequenceAssignment, Number,
 };
 use halo2_proofs::{
     circuit::Value,
@@ -122,9 +122,7 @@ impl<F: ff::PrimeField, const SIZE: usize, const SIZE_SQRT: usize> halo2_proofs:
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         assert_eq!(SIZE_SQRT * SIZE_SQRT, SIZE);
 
-        let public_problem_columns = (0..SIZE)
-            .map(|_| meta.instance_column())
-            .f_collect("the number of items is correct");
+        let public_problem_columns = [(); SIZE].map(|_| meta.instance_column());
         for col in public_problem_columns {
             meta.enable_equality(col);
         }
@@ -132,9 +130,7 @@ impl<F: ff::PrimeField, const SIZE: usize, const SIZE_SQRT: usize> halo2_proofs:
         let sudoku_symbols_column = meta.fixed_column();
         meta.enable_constant(sudoku_symbols_column);
 
-        let item_columns = (0..SIZE)
-            .map(|_| meta.advice_column())
-            .f_collect("the number of items is correct");
+        let item_columns = [(); SIZE].map(|_| meta.advice_column());
         let swap_selector_columns = (0..SIZE / 2).map(|_| meta.advice_column()).collect();
 
         SudokuConfig {
