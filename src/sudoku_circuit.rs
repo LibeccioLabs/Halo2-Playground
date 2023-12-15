@@ -416,15 +416,16 @@ mod tests {
 
                 let instance = Vec::from(problem.map(|column| Vec::from(column)));
 
-                let t0 = std::time::Instant::now();
-                let prover = MockProver::run(POW_OF_2_MAX_ROWS, &circuit, instance)
-                    .expect("Proof generation goes wrong");
-                let t1 = std::time::Instant::now();
-                println!("Proof generation time: {:?}", t1 - t0);
-                let t2 = std::time::Instant::now();
-                prover.verify().expect("Proof verification goes wrong");
-                let t3 = std::time::Instant::now();
-                println!("Proof verification time: {:?}", t3 - t2);
+                let prover = crate::time_it!(
+                    "Proof generation time: {:?}",
+                    MockProver::run(POW_OF_2_MAX_ROWS, &circuit, instance)
+                        .expect("Proof generation goes wrong")
+                );
+
+                crate::time_it!(
+                    "Proof verification time: {:?}",
+                    prover.verify().expect("Proof verification goes wrong")
+                )
             }
         }
     }

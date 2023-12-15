@@ -135,10 +135,12 @@ mod tests {
 
             let instance = vec![vec![$expected_out]];
 
-            let prover = MockProver::run($POW_OF_2_MAX_ROWS, &circuit, instance)
-                .expect("Proof generation goes wrong");
-
-            prover.verify()
+            let prover = crate::time_it!(
+                "Proof generation time: {:?}",
+                MockProver::run($POW_OF_2_MAX_ROWS, &circuit, instance)
+                    .expect("Proof generation goes wrong")
+            );
+            crate::time_it!("Proof verification time: {:?}", prover.verify())
         }};
     }
 
@@ -243,11 +245,6 @@ mod tests {
                     cs.minimum_rows().next_power_of_two().ilog2() + 1
                 };
 
-                // TODO: This print statement's only purpose is to get
-                // a feeling of how long each circuit takes to execute.
-                //
-                // At some point, this should be removed, and it will be
-                // substituted by a precise benchmark.
                 println!(
                     "mul_batch_size = {} ; n_columns = {} ; input = {:?}",
                     $mul_batch_size,
