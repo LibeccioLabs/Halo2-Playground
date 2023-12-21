@@ -12,4 +12,5 @@ try_collect = { git = "https://github.com/Gorzorg/try_collect.git" }
 rand = "0.8.5"
 
 [features]
+default = ["halo2_proofs/batch"]
 rayon = ["halo2_proofs/multicore"]
