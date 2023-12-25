@@ -7,8 +7,6 @@ edition = "2021"
 ff = "0.13.0"
 halo2_proofs = { default-features = false, git = "https://github.com/zcash/halo2.git", rev = "7fd2ce259ec3d0b0e3ede3fa20e4cdcfc395efc9" }
 try_collect = { git = "https://github.com/Gorzorg/try_collect.git" }
-
-[dev-dependencies]
 rand = "0.8.5"
 
 [features]

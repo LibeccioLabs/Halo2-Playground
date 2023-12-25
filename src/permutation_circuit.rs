@@ -165,82 +165,16 @@ impl<F: ff::Field, const N_OBJECTS: usize> halo2_proofs::plonk::Circuit<F>
 mod tests {
     use super::*;
 
-    /// A struct that iterates over all the permutations of a given length.
-    struct KnuthL<const N_OBJECTS: usize>(Option<[usize; N_OBJECTS]>);
-
-    impl<const N_OBJECTS: usize> Default for KnuthL<N_OBJECTS> {
-        fn default() -> Self {
-            if N_OBJECTS == 0 {
-                return Self(None);
-            }
-
-            Self(Some(
-                (0..N_OBJECTS).f_collect("the number of items is correct"),
-            ))
-        }
-    }
-
-    impl<const N_OBJECTS: usize> Iterator for KnuthL<N_OBJECTS> {
-        type Item = [usize; N_OBJECTS];
-        fn next(&mut self) -> Option<Self::Item> {
-            if self.0 == None {
-                return None;
-            }
-            // Copy the current state, as return value.
-            let current = self.0;
-
-            let array = self
-                .0
-                .as_mut()
-                .expect("we checked at the beginning that self.0 != None");
-
-            // Find last j such that self[j] <= self[j+1].
-            // Nullify self.0 if it doesn't exist
-            let j = (0..=N_OBJECTS - 2)
-                .rev()
-                .find(|&j| array[j] <= array[j + 1]);
-
-            // The last permutation we yield is [N_OBJECTS - 1, N_OBJECTS - 2, ..., 1, 0]
-            if j == None {
-                self.0 = None;
-                return current;
-            }
-            let j = j.unwrap();
-
-            // Find last l such that self[j] <= self[l], then
-            // exchange elements j and l, and then reverse self[j+1..]
-            let l = (j + 1..=N_OBJECTS - 1).rev().find(|&l| array[j] <= array[l])
-            .expect("since `j + 1` is in the range, and given the definition of `j`, we are sure that `find` will return `Some(...)`");
-            array.swap(j, l);
-            array[j + 1..].reverse();
-
-            current
-        }
-    }
-
-    /// Given a permutation, outputs its inverse.
-    /// It is up to the caller to guarantee that the input
-    /// to this function is an actual permutation.
-    fn inverse_permutation<const N_OBJECTS: usize>(
-        permutation: [usize; N_OBJECTS],
-    ) -> [usize; N_OBJECTS] {
-        let mut output = [0; N_OBJECTS];
-        for (i, n) in permutation.into_iter().enumerate() {
-            output[n] = i;
-        }
-        output
-    }
+    use crate::utilities::{inverse_permutation, PermutationsIter};
 
     #[test]
     fn permutation_circuit_comprehensive_7_length_test() {
         use halo2_proofs::{dev::MockProver, pasta::Fp};
 
-        let objects: [Value<Fp>; 7] = (0..7)
-            .map(|n| Value::known(Fp::from(n as u64)))
-            .f_collect("the number of items is correct");
+        let objects: [Value<Fp>; 7] = core::array::from_fn(|n| Value::known(Fp::from(n as u64)));
 
         const POW_2_EXP_MAX_ROWS: u32 = 5;
-        for permutation in KnuthL::<7>::default() {
+        for permutation in PermutationsIter::<7> {
             let circuit = PermutationCircuit::<Fp, 7>::new_unchecked(objects.clone(), permutation);
 
             // The permutation output is equal to the permutation that is
@@ -257,7 +191,9 @@ mod tests {
 
     #[test]
     fn permutation_circuit_test_with_actual_prover() {
-        use halo2_proofs::pasta::{EqAffine, Fp};
+        use halo2_proofs::pasta::Fp;
+
+        use crate::utilities::{ProverWrapper, VerifierWrapper};
 
         const N_OBJECTS: usize = 5;
         const N_OBJECTS_FACTORIAL: usize = 120;
@@ -271,91 +207,40 @@ mod tests {
         /// Currently, we do not know if choosing a bigger value has advantages.
         const K: u32 = 4;
 
-        let objects: [Value<Fp>; 5] = (0..N_OBJECTS)
-            .map(|n| Value::known(Fp::from(n as u64)))
-            .f_collect("the number of items is correct");
+        let objects: [Value<Fp>; 5] = core::array::from_fn(|n| Value::known(Fp::from(n as u64)));
 
-        let public_parameters = halo2_proofs::poly::commitment::Params::<EqAffine>::new(K);
+        let circuit_wiring = TestCircuit::default();
+        let mut prover = ProverWrapper::initialize_parameters_and_prover(K, circuit_wiring)
+            .expect("prover setup should not fail");
 
-        let circuit = TestCircuit::default();
-
-        let vk = halo2_proofs::plonk::keygen_vk(&public_parameters, &circuit)
-            .expect("verifier key generation should not fail");
-        let pk = halo2_proofs::plonk::keygen_pk(&public_parameters, vk.clone(), &circuit)
-            .expect("proving key generation should not fail");
-
-        // Apparently, we can generate batches of proofs with Halo2. Neat!
-        // All we need to do is put our circuits and instances in a slice,
-        // before feeding them to the prover.
-
-        let circuits: [TestCircuit; N_OBJECTS_FACTORIAL] = KnuthL::<5>::default()
-            .map(|permutation| TestCircuit::new_unchecked(objects.clone(), permutation))
-            .f_collect("the number of items is correct");
-
-        let instances: [[Fp; N_OBJECTS]; N_OBJECTS_FACTORIAL] = KnuthL::<5>::default()
+        let instances: [[Fp; 5]; N_OBJECTS_FACTORIAL] = PermutationsIter::<5>
+            .into_iter()
             .map(|permutation| inverse_permutation(permutation).map(|x| Fp::from(x as u64)))
             .f_collect("the number of items is correct");
+        let instance_slices: [[&[Fp]; 1]; N_OBJECTS_FACTORIAL] =
+            core::array::from_fn(|i| [instances[i].as_slice()]);
 
-        // We need to do some formatting with the instances before giving them to the prover.
-        // What we have is [[Fp; N_OBJECTS]; _]. What the prover wants is &[&[&[Fp]]]
+        for (instance, permutation) in instance_slices.iter().zip(PermutationsIter::<5>) {
+            let circuit = TestCircuit::new_unchecked(objects.clone(), permutation);
 
-        //
-        let instances: [[&[Fp]; 1]; N_OBJECTS_FACTORIAL] = instances
-            .iter()
-            .map(|x| [x.as_slice()])
-            .f_collect("the number of items is correct");
-        let instances: [&[&[Fp]]; N_OBJECTS_FACTORIAL] = instances
-            .iter()
-            .map(|x| x.as_slice())
-            .f_collect("the number of items is correct");
-
-        // Why Blake2bWrite ? Because it is the only type in halo2_proofs
-        // that implements the `halo2_proosf::transcript::TranscriptWrite`
-        // trait, which is needed for the transcript argument to
-        // `halo2_proofs::plonk::create_proof`
-        //
-        // Why use EqAffine as generic parameter? Idk. Would be nice to know.
-        let mut transcript =
-            halo2_proofs::transcript::Blake2bWrite::<_, halo2_proofs::pasta::EqAffine, _>::init(
-                vec![],
-            );
-
-        crate::time_it! {
-                "The proving time of 120 5-items permutations with an actual prover is {:?}",
-            halo2_proofs::plonk::create_proof(
-                &public_parameters,
-                &pk,
-                &circuits,
-                &instances,
-                // OsRng is assumed to be cryptographically safe. Also kinda slow.
-                rand::rngs::OsRng,
-                &mut transcript,
-            )
-            .expect("proof generation should not fail");
+            prover.add_item(circuit, instance.as_slice());
         }
 
-        let transcript = transcript.finalize();
+        let transcript = crate::time_it! {
+                "The proving time of 120 5-items permutations with an actual prover is {:?}",
+                prover.prove().expect("proof generation should not fail")
+        };
+
+        let mut verifier = VerifierWrapper::from(prover);
+
         println!(
             "The aggregated proof's length is {} bytes",
             transcript.len()
         );
-        let mut transcript =
-            halo2_proofs::transcript::Blake2bRead::<_, halo2_proofs::pasta::EqAffine, _>::init(
-                transcript.as_slice(),
-            );
-
-        let strategy = halo2_proofs::plonk::SingleVerifier::new(&public_parameters);
 
         crate::time_it! {
             "And the verification time with an actual verifier is {:?}",
-            halo2_proofs::plonk::verify_proof(
-                &public_parameters,
-                &vk,
-                strategy,
-                &instances,
-                &mut transcript,
-            )
-            .expect("proof verification should not fail");
+            assert!(verifier.verify(instance_slices.iter().map(|a| a.as_slice()), transcript.as_slice()))
         }
     }
 }

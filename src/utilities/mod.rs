@@ -23,6 +23,15 @@ pub use region_sequence_assignment::RegionSequenceAssignment;
 mod field_counter;
 pub use field_counter::FieldCounter;
 
+mod permutations_iter;
+pub use permutations_iter::{inverse_permutation, PermutationsIter};
+
 mod iter_apply_macro;
 
 mod time_it_macro;
+
+/// Simple auxiliary structs to be used in circuit tests.
+/// Those are not optimized for use in actual scenarios,
+/// but for ease of use in minimal test cases.
+mod proving_utilities;
+pub use proving_utilities::{ProverWrapper, VerifierWrapper};
