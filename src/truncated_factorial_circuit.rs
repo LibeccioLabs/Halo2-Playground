@@ -267,4 +267,45 @@ mod tests {
             [3_u64, 5_u64, 42_u64]
         );
     }
+
+    #[test]
+    fn test_with_actual_prover() {
+        const MAX_NR_ROWS_POW_2_EXPONENT: u32 = 4;
+        const N_FACTORS: usize = 1000;
+
+        use crate::utilities::{ProverWrapper, VerifierWrapper};
+
+        type TestCircuit = TruncatedFactorialCircuit<Fp, N_FACTORS, 20, 10>;
+
+        let circuit_wiring = TestCircuit::default();
+
+        let mut prover = ProverWrapper::initialize_parameters_and_prover(
+            MAX_NR_ROWS_POW_2_EXPONENT,
+            circuit_wiring,
+        )
+        .expect("prover setup should not fail");
+        let circuit = TestCircuit::new(Fp::from(1));
+
+        let instance = [(1..=N_FACTORS).fold(Fp::from(1), |acc, f| acc * Fp::from(f as u64))];
+        let instance = [instance.as_slice()];
+
+        prover.add_item(circuit, instance.as_slice());
+
+        let transcript = crate::time_it! {
+            "proof generation time: {:?}",
+            prover.prove().expect("proof generation fails")
+        };
+
+        println!("Proof length in bytes: {}", transcript.len());
+
+        let mut verifier = VerifierWrapper::from(prover);
+
+        crate::time_it! {
+            "proof verification time: {:?}",
+            assert!(
+                verifier.verify([instance.as_slice()], transcript.as_slice()),
+                "proof verification falis"
+            )
+        };
+    }
 }

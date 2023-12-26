@@ -1,19 +1,20 @@
 use crate::{
     permutation_chip::PermutationChip, sudoku_problem_chip::SudokuProblemChip,
-    utilities::RegionSequenceAssignment, Number,
+    utilities::RegionSequenceAssignment,
 };
 use halo2_proofs::{
     circuit::Value,
-    circuit::{Chip, Layouter, SimpleFloorPlanner},
+    circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Column, ConstraintSystem, Error, Fixed, Instance},
 };
 use std::collections::{BTreeMap, BTreeSet};
-use try_collect::{ForceCollect, TryCollect};
+use try_collect::ForceCollect;
 
 /// A circuit that proves that the input and output values are a permutation of one another.
+#[derive(Clone, Debug)]
 pub struct SudokuCircuit<F: ff::Field, const SIZE: usize, const SIZE_SQRT: usize> {
-    problem: [[F; SIZE]; SIZE],
-    solution: [[F; SIZE]; SIZE],
+    problem: Value<[[F; SIZE]; SIZE]>,
+    solution: Value<[[F; SIZE]; SIZE]>,
     symbols: [F; SIZE],
 }
 
@@ -21,8 +22,8 @@ impl<F: ff::PrimeField, const SIZE: usize, const SIZE_SQRT: usize>
     SudokuCircuit<F, SIZE, SIZE_SQRT>
 {
     pub fn new_unchecked(
-        problem: [[F; SIZE]; SIZE],
-        solution: [[F; SIZE]; SIZE],
+        problem: Value<[[F; SIZE]; SIZE]>,
+        solution: Value<[[F; SIZE]; SIZE]>,
         symbols: [F; SIZE],
     ) -> Self {
         Self {
@@ -74,8 +75,8 @@ impl<F: ff::PrimeField, const SIZE: usize, const SIZE_SQRT: usize>
         }
 
         Ok(Self {
-            problem,
-            solution,
+            problem: Value::known(problem),
+            solution: Value::known(solution),
             symbols,
         })
     }
@@ -89,14 +90,14 @@ pub struct SudokuConfig<const SIZE: usize> {
     sudoku_symbols_column: Column<Fixed>,
 }
 
-impl<F: ff::Field, const SIZE: usize, const SIZE_SQRT: usize> Default
-    for SudokuCircuit<F, SIZE, SIZE_SQRT>
-{
-    fn default() -> Self {
+impl<F: ff::Field, const SIZE: usize, const SIZE_SQRT: usize> SudokuCircuit<F, SIZE, SIZE_SQRT> {
+    /// Given a symbols array, outputs an instance of the circuit
+    /// without witness values
+    pub fn circuit_wiring_from_symbols(symbols: [F; SIZE]) -> Self {
         Self {
-            problem: [[F::ZERO; SIZE]; SIZE],
-            solution: [[F::ZERO; SIZE]; SIZE],
-            symbols: [F::ZERO; SIZE],
+            problem: Value::unknown(),
+            solution: Value::unknown(),
+            symbols,
         }
     }
 }
@@ -116,7 +117,7 @@ impl<F: ff::PrimeField, const SIZE: usize, const SIZE_SQRT: usize> halo2_proofs:
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        Default::default()
+        Self::circuit_wiring_from_symbols(self.symbols)
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -150,12 +151,12 @@ impl<F: ff::PrimeField, const SIZE: usize, const SIZE_SQRT: usize> halo2_proofs:
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let symbol_to_ordinal = self
-            .symbols
-            .iter()
-            .enumerate()
-            .map(|(idx, sym)| (sym.to_repr().as_ref().to_owned(), idx))
-            .collect::<BTreeMap<_, _>>();
+        let symbol_to_ordinal = BTreeMap::from_iter(
+            self.symbols
+                .into_iter()
+                .enumerate()
+                .map(|(idx, sym)| (sym.to_repr().as_ref().to_owned(), idx)),
+        );
 
         let grid_compatibility_chip =
             crate::sudoku_problem_chip::SudokuProblemChip::<SIZE, F>::construct(
@@ -188,8 +189,12 @@ impl<F: ff::PrimeField, const SIZE: usize, const SIZE_SQRT: usize> halo2_proofs:
             solution_grid: solution_cells,
         } = grid_compatibility_chip.enforce_grid_compatibility(
             layouter.namespace(|| "sudoku problem setup and problem-solution compatibility"),
-            self.problem.map(|column| column.map(|x| Value::known(x))),
-            self.solution.map(|column| column.map(|x| Value::known(x))),
+            self.problem
+                .transpose_array()
+                .map(|column| column.transpose_array()),
+            self.solution
+                .transpose_array()
+                .map(|column| column.transpose_array()),
         )?;
 
         // We impose an equality constraint between the public output, and the `problem_cells`
@@ -218,126 +223,162 @@ impl<F: ff::PrimeField, const SIZE: usize, const SIZE_SQRT: usize> halo2_proofs:
         //
         // We are going to collect the output cells in this vectos, which we will later
         // use to enforce equality over them.
-        let mut permutation_outputs = Vec::with_capacity(3 * SIZE);
+        let permutation_outputs = self
+            .solution
+            .zip(Value::known(Vec::with_capacity(3 * SIZE)))
+            .map(|(solution, mut permutation_outputs)| {
+                // For each column, we obtain its permutation that aligns it to the symbols
+                for col_idx in 0..SIZE {
+                    let col = solution[col_idx];
+                    let alloc_col = solution_cells[col_idx].clone();
 
-        // For each column, we obtain its permutation that aligns it to the symbols
-        for col_idx in 0..SIZE {
-            let col = self.solution[col_idx];
-            let alloc_col = solution_cells[col_idx].clone();
+                    permutation_outputs.push(permutation_chip.apply_permutation(
+                        layouter.namespace(|| "permutating column"),
+                        alloc_col,
+                        get_permutation(col),
+                    ));
+                }
+                // We do the same for the rows
+                for row_idx in 0..SIZE {
+                    let row = solution.map(|col| col[row_idx]);
+                    let alloc_row = (0..SIZE)
+                        .map(|col_idx| solution_cells[col_idx][row_idx].clone())
+                        .f_collect("the number of items is correct");
 
-            permutation_outputs.push(permutation_chip.apply_permutation(
-                layouter.namespace(|| "permutating column"),
-                alloc_col,
-                get_permutation(col),
-            )?);
-        }
+                    permutation_outputs.push(permutation_chip.apply_permutation(
+                        layouter.namespace(|| "permutating row"),
+                        alloc_row,
+                        get_permutation(row),
+                    ));
+                }
 
-        // We do the same for the rows
-        for row_idx in 0..SIZE {
-            let row = self.solution.map(|col| col[row_idx]);
-            let alloc_row = (0..SIZE)
-                .map(|col_idx| solution_cells[col_idx][row_idx].clone())
-                .f_collect("the number of items is correct");
+                // And we do the same for the regions
+                for region_col_offset in (0..SIZE_SQRT).map(|i| i * SIZE_SQRT) {
+                    for region_row_offset in (0..SIZE_SQRT).map(|i| i * SIZE_SQRT) {
+                        // An iterator over the grid positions that compose a sudoku region.
+                        // for example, if SIZE == 4, SIZE_SQRT == 2,
+                        // region_col_offset == 2, region_row_offset == 0,
+                        // the iterator visits the cells marked in the image below,
+                        // in the visualized order
+                        // |-------|
+                        // | | |0|2|
+                        // |-------|
+                        // | | |1|3|
+                        // |-------|
+                        // | | | | |
+                        // |-------|
+                        // | | | | |
+                        // |-------|
+                        let region_index_iter = (0..SIZE).map(|idx| {
+                            (
+                                region_col_offset + idx / SIZE_SQRT,
+                                region_row_offset + idx % SIZE_SQRT,
+                            )
+                        });
 
-            permutation_outputs.push(permutation_chip.apply_permutation(
-                layouter.namespace(|| "permutating row"),
-                alloc_row,
-                get_permutation(row),
-            )?);
-        }
+                        let region = region_index_iter
+                            .clone()
+                            .map(|(col_idx, row_idx)| solution[col_idx][row_idx])
+                            .f_collect("the number of items is correct");
+                        let alloc_region = region_index_iter
+                            .map(|(col_idx, row_idx)| solution_cells[col_idx][row_idx].clone())
+                            .f_collect("the number of items is correct");
 
-        // And we do the same for the regions
-        for region_col_offset in (0..SIZE_SQRT).map(|i| i * SIZE_SQRT) {
-            for region_row_offset in (0..SIZE_SQRT).map(|i| i * SIZE_SQRT) {
-                // An iterator over the grid positions that compose a sudoku region.
-                // for example, if SIZE == 4, SIZE_SQRT == 2,
-                // region_col_offset == 2, region_row_offset == 0,
-                // the iterator visits the cells marked in the image below,
-                // in the visualized order
-                // |-------|
-                // | | |0|2|
-                // |-------|
-                // | | |1|3|
-                // |-------|
-                // | | | | |
-                // |-------|
-                // | | | | |
-                // |-------|
-                let region_index_iter = (0..SIZE).map(|idx| {
-                    (
-                        region_col_offset + idx / SIZE_SQRT,
-                        region_row_offset + idx % SIZE_SQRT,
-                    )
-                });
+                        permutation_outputs.push(permutation_chip.apply_permutation(
+                            layouter.namespace(|| "permutating region"),
+                            alloc_region,
+                            get_permutation(region),
+                        ));
+                    }
+                }
+                Result::<Vec<_>, _>::from_iter(permutation_outputs)
+            });
 
-                let region = region_index_iter
-                    .clone()
-                    .map(|(col_idx, row_idx)| self.solution[col_idx][row_idx])
-                    .f_collect("the number of items is correct");
-                let alloc_region = region_index_iter
-                    .map(|(col_idx, row_idx)| solution_cells[col_idx][row_idx].clone())
-                    .f_collect("the number of items is correct");
-
-                permutation_outputs.push(permutation_chip.apply_permutation(
-                    layouter.namespace(|| "permutating region"),
-                    alloc_region,
-                    get_permutation(region),
-                )?);
-            }
-        }
+        // If the result is known and is an error, we propagate the error.
+        // This propagation method loses information about the error type,
+        // but it is better than nothing.
+        permutation_outputs.error_if_known_and(|result| result.is_err())?;
+        // From now on we are sure that if `permutation_outputs` is known,
+        // then it is not an error, and we can unwrap it.
+        let permutation_outputs = permutation_outputs.map(
+            |result|
+            result.expect("if this was an error, the previous call to `error_if_known_and` would have returned an error.")
+        );
 
         // Now we impose equality constraints among all permutation_outputs
-        layouter
-            .namespace(|| "permutation equality constraints")
-            .assign_region(
-                || "permutation equality constraints",
-                |mut region| {
-                    // We load the fixed symbols into the region
-                    let copied_symbol_cells = (0..SIZE)
-                        .map(|idx| {
-                            symbol_cells[idx]
-                                .0
-                                .copy_advice(
-                                    || "copying symbols for comparison",
-                                    &mut region,
-                                    permutation_chip.config().item_columns[idx].clone(),
-                                    0,
-                                )
-                                .map(Number)
-                        })
-                        .try_collect::<[Number<F>; SIZE]>()
-                        .map_err(|err| {
-                            err.expect_try_from_error(|| "the number of items is correct")
-                        })?;
-
-                    // For each permutation result, we constrain it to be equal to the loaded symbols.
-                    for p_out in permutation_outputs.iter() {
-                        for (left, right) in p_out.into_iter().zip(copied_symbol_cells.iter()) {
-                            region.constrain_equal(left.0.cell(), right.0.cell())?;
-                        }
-                    }
-                    Ok(())
-                },
-            )?;
-        Ok(())
+        permutation_outputs
+            .map(|permutation_outputs| {
+                layouter
+                    .namespace(|| "permutation equality constraints")
+                    .assign_region(
+                        || "permutation equality constraints",
+                        |mut region| {
+                            // For each permutation result, we constrain it to be equal to the loaded symbols.
+                            for p_out in permutation_outputs.iter() {
+                                for (left, right) in p_out.into_iter().zip(symbol_cells.iter()) {
+                                    region.constrain_equal(left.cell(), right.cell())?;
+                                }
+                            }
+                            Ok(())
+                        },
+                    )
+            })
+            // Same as before, the only way to unwrap an error from within a Value
+            // seems to be this `error_if_known_and` hack.
+            .error_if_known_and(|result| result.is_err())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ff::Field;
 
-    #[test]
-    fn sudoku_circuit_test() {
-        use halo2_proofs::{dev::MockProver, pasta::Fp};
+    use halo2_proofs::pasta::Fp;
 
-        const POW_OF_2_MAX_ROWS: u32 = 10;
-        let symbols: [Fp; 9] = (1..=9)
-            .map(|n| Fp::from(n))
-            .f_collect("the number of items is correct");
+    type SurokuGrid = [[Fp; 9]; 9];
 
-        let valid_sudoku9_grids: Vec<_> = [
+    /// Helper function to generate symbols and a list of problems
+    /// The return value is a tuple, laid out as
+    /// `(symbols, impl Iterator<Item = (solution, problem)>)`
+    fn setup_values(
+        nr_random_masks_per_problem: usize,
+    ) -> ([Fp; 9], impl IntoIterator<Item = (SurokuGrid, SurokuGrid)>) {
+        let (symbols, grids_iter) = numeric_setup_values(nr_random_masks_per_problem);
+        let symbols = symbols.map(|n| Fp::from(n as u64));
+
+        let grids_iter = grids_iter.into_iter().map(move |(solution, problem)| {
+            (
+                solution.map(|col| col.map(|cell| symbols[cell - 1])),
+                problem.map(|col| {
+                    col.map(|cell| {
+                        if cell == 0 {
+                            Fp::from(0)
+                        } else {
+                            symbols[cell - 1]
+                        }
+                    })
+                }),
+            )
+        });
+
+        (symbols, grids_iter)
+    }
+
+    /// Helper function to generate symbols and a list of problems
+    /// The return value is a tuple, laid out as
+    /// `(symbols, impl Iterator<Item = (solution, problem)>)`
+    ///
+    /// The values provided are usize arrays. To use them in a
+    /// sudoku circuit, they have to be converted in Fp values.
+    fn numeric_setup_values(
+        nr_random_masks_per_problem: usize,
+    ) -> (
+        [usize; 9],
+        impl IntoIterator<Item = ([[usize; 9]; 9], [[usize; 9]; 9])>,
+    ) {
+        let symbols = core::array::from_fn(|n| n + 1);
+
+        let grids = [
             [
                 [2, 4, 9, 5, 3, 6, 1, 8, 7],
                 [3, 5, 1, 2, 7, 8, 4, 9, 6],
@@ -382,10 +423,41 @@ mod tests {
                 [6, 4, 2, 9, 7, 8, 5, 3, 1],
                 [9, 7, 8, 5, 3, 1, 6, 4, 2],
             ],
-        ] // We transform the sudoku grids in grids of field elements
-        .into_iter()
-        .map(|grid| grid.map(|col| col.map(|value| symbols[value - 1])))
-        .collect();
+        ];
+
+        let nr_grids = grids.len();
+        // We transform the sudoku grids into an iterator of grids of field elements
+        let grids_iter = (0..nr_grids * nr_random_masks_per_problem)
+            .into_iter()
+            .map(|_| rand::random::<[[bool; 9]; 9]>())
+            .enumerate()
+            .map(move |(idx, mask)| {
+                let grid = grids[idx / nr_random_masks_per_problem];
+
+                let masked_grid = core::array::from_fn(|col_idx| {
+                    core::array::from_fn(|row_idx| {
+                        if mask[col_idx][row_idx] {
+                            0
+                        } else {
+                            grid[col_idx][row_idx]
+                        }
+                    })
+                });
+                (grid, masked_grid)
+            });
+
+        (symbols, grids_iter)
+    }
+
+    #[test]
+    fn sudoku_circuit_test() {
+        use halo2_proofs::{dev::MockProver, pasta::Fp};
+
+        const POW_OF_2_MAX_ROWS: u32 = 10;
+
+        const NR_RANDOM_MASKS_PER_PROBLEM: usize = 10;
+
+        let (symbols, sudoku_problems) = setup_values(NR_RANDOM_MASKS_PER_PROBLEM);
 
         // Since the search space is simply too big,
         // and there is no simple way to sample it,
@@ -395,38 +467,74 @@ mod tests {
         // since different re-runs will actually test
         // more combinations, not always the same few ones.
 
-        for solved_sudoku in valid_sudoku9_grids {
-            for _ in 0..10 {
-                let mask = rand::random::<[[bool; 9]; 9]>();
+        for (solution, problem) in sudoku_problems {
+            let circuit = SudokuCircuit::<Fp, 9, 3>::try_new(problem, solution, symbols)
+                .expect("circuit generation goes wrong");
 
-                let problem = mask
-                    .into_iter()
-                    .zip(solved_sudoku)
-                    .map(|(mask_col, problem_col)| {
-                        mask_col
-                            .into_iter()
-                            .zip(problem_col)
-                            .map(|(mask_it, n)| if mask_it { Fp::ZERO } else { n })
-                            .f_collect::<[Fp; 9]>("the number of items is correct")
-                    })
-                    .f_collect("the number of items is correct");
+            let instance = Vec::from(problem.map(|column| Vec::from(column)));
 
-                let circuit =
-                    SudokuCircuit::<Fp, 9, 3>::new_unchecked(problem, solved_sudoku, symbols);
+            let prover = crate::time_it!(
+                "Proof generation time: {:?}",
+                MockProver::run(POW_OF_2_MAX_ROWS, &circuit, instance)
+                    .expect("Proof generation goes wrong")
+            );
 
-                let instance = Vec::from(problem.map(|column| Vec::from(column)));
-
-                let prover = crate::time_it!(
-                    "Proof generation time: {:?}",
-                    MockProver::run(POW_OF_2_MAX_ROWS, &circuit, instance)
-                        .expect("Proof generation goes wrong")
-                );
-
-                crate::time_it!(
-                    "Proof verification time: {:?}",
-                    prover.verify().expect("Proof verification goes wrong")
-                )
-            }
+            crate::time_it!(
+                "Proof verification time: {:?}",
+                prover.verify().expect("Proof verification goes wrong")
+            )
         }
+    }
+
+    #[test]
+    fn sudoku_test_with_actual_prover() {
+        use crate::utilities::{ProverWrapper, VerifierWrapper};
+
+        const POW_OF_2_MAX_ROWS: u32 = 9;
+
+        const NR_RANDOM_MASKS_PER_PROBLEM: usize = 2;
+        type TestCircuit = SudokuCircuit<Fp, 9, 3>;
+
+        let (symbols, sudoku_problems) = setup_values(NR_RANDOM_MASKS_PER_PROBLEM);
+
+        let circuit_wiring = TestCircuit::circuit_wiring_from_symbols(symbols);
+
+        let mut prover =
+            ProverWrapper::initialize_parameters_and_prover(POW_OF_2_MAX_ROWS, circuit_wiring)
+                .expect("prover setup goes wrong");
+
+        let sudoku_problems = Vec::from_iter(sudoku_problems);
+
+        // Due to the awkward nested slice arguments the halo prover and verifier require,
+        // we have to format the instance input.
+        let instance_slices = Vec::from_iter(sudoku_problems.iter().map(|(_, problem)| {
+            core::array::from_fn::<_, 9, _>(|col_idx| problem[col_idx].as_slice())
+        }));
+
+        for ((solution, problem), instance_slices) in
+            sudoku_problems.iter().zip(instance_slices.iter())
+        {
+            let circuit = TestCircuit::try_new(problem.clone(), solution.clone(), symbols)
+                .expect("creation of circuit instance should not fail");
+
+            prover.add_item(circuit, instance_slices);
+        }
+
+        let transcript = crate::time_it! {
+            "Generating proof for sudoku problems having solution takes {:?}",
+            prover.prove().expect("proof generation goes wrong")
+        };
+
+        println!("The proof length is {} bytes", transcript.len());
+
+        let mut verifier = VerifierWrapper::from(prover);
+
+        crate::time_it! {
+            "Verifying the proof that come sudoku problems have a solution takes {:?}",
+            assert!(verifier.verify(
+                instance_slices.iter().map(|instance| instance.as_slice()),
+                &transcript
+            ));
+        };
     }
 }

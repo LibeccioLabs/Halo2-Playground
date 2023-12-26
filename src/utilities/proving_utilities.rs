@@ -50,6 +50,11 @@ impl<'i, C: Circuit<Fp>> ProverWrapper<'i, C> {
         self.instances.push(instance);
     }
 
+    pub fn clear(&mut self) {
+        self.circuits.clear();
+        self.instances.clear();
+    }
+
     pub fn prove(&self) -> Result<Vec<u8>, Error> {
         let mut transcript = Blake2bWrite::init(vec![]);
 
@@ -65,8 +70,12 @@ impl<'i, C: Circuit<Fp>> ProverWrapper<'i, C> {
         Ok(transcript.finalize())
     }
 
-    pub fn ref_public_parameters(&self) -> &Params<EqAffine> {
+    pub fn public_parameters(&self) -> &Params<EqAffine> {
         &self.public_parameters
+    }
+
+    pub fn proving_key(&self) -> &ProvingKey<EqAffine> {
+        &self.proving_key
     }
 
     pub fn inner_parts(self) -> (Params<EqAffine>, ProvingKey<EqAffine>) {

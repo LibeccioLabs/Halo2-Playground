@@ -29,7 +29,7 @@ pub mod truncated_factorial_chip;
 pub mod utilities;
 
 /// A variable representing a number.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Number<F: ff::Field>(halo2_proofs::circuit::AssignedCell<F, F>);
 
 impl<F: ff::Field> std::ops::Deref for Number<F> {
