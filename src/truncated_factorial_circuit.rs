@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn factorial_up_to_20() {
+    fn mock_factorial_1_to_20() {
         const POW_OF_2_MAX_ROWS: u32 = 6;
 
         /// Further information compression,
@@ -211,15 +211,31 @@ mod tests {
         // of `N_FACTORS` does not wrap around in the field,
         // should fail.
         batch_test_with_params_fail!(
-            {1, three}{2, three}{3, three}{4, three}{5, three}
-            {6, three}{7, three}{8, three}{9, three}{10, three}
-            {11, three}{12, three}{13, three}{14, three}{15, three}
-            {16, three}{17, three}{18, three}{19, three}{20, three}
+            {1, three}
+            {2, three}
+            {3, three}
+            {4, three}
+            {5, three}
+            {6, three}
+            {7, three}
+            {8, three}
+            {9, three}
+            {10, three}
+            {11, three}
+            {12, three}
+            {13, three}
+            {14, three}
+            {15, three}
+            {16, three}
+            {17, three}
+            {18, three}
+            {19, three}
+            {20, three}
         );
     }
 
     #[test]
-    fn product_1000_consecutive_numbers() {
+    fn mock_factorial_1000() {
         /// This macro exists because [`iter_apply_macro`] requires
         /// a macro argument. It mostly behaves like a generic function,
         /// with `mul_batch_size` and `n_columns` as generic parameters
@@ -269,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn test_with_actual_prover() {
+    fn factorial() {
         const MAX_NR_ROWS_POW_2_EXPONENT: u32 = 4;
         const N_FACTORS: usize = 1000;
 

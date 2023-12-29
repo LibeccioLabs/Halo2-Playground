@@ -450,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn sudoku_circuit_test() {
+    fn mock_sudoku() {
         use halo2_proofs::{dev::MockProver, pasta::Fp};
 
         const POW_OF_2_MAX_ROWS: u32 = 10;
@@ -487,7 +487,7 @@ mod tests {
     }
 
     #[test]
-    fn sudoku_test_with_actual_prover() {
+    fn sudoku() {
         use crate::utilities::{ProverWrapper, VerifierWrapper};
 
         const POW_OF_2_MAX_ROWS: u32 = 9;

@@ -5,6 +5,7 @@ mod sudoku_circuit;
 pub use sudoku_circuit::SudokuCircuit;
 
 mod truncated_factorial_circuit;
+pub use truncated_factorial_circuit::TruncatedFactorialCircuit;
 
 /// This chip implements a gate that enforces two
 /// sets of values to be a permutation of each other.

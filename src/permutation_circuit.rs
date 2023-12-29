@@ -168,7 +168,7 @@ mod tests {
     use crate::utilities::{inverse_permutation, PermutationsIter};
 
     #[test]
-    fn permutation_circuit_comprehensive_7_length_test() {
+    fn mock_permutation() {
         use halo2_proofs::{dev::MockProver, pasta::Fp};
 
         let objects: [Value<Fp>; 7] = core::array::from_fn(|n| Value::known(Fp::from(n as u64)));
@@ -190,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn permutation_circuit_test_with_actual_prover() {
+    fn permutation() {
         use halo2_proofs::pasta::Fp;
 
         use crate::utilities::{ProverWrapper, VerifierWrapper};
