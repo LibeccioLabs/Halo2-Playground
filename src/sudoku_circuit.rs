@@ -2,6 +2,7 @@ use crate::{
     permutation_chip::PermutationChip, sudoku_problem_chip::SudokuProblemChip,
     utilities::RegionSequenceAssignment,
 };
+
 use halo2_proofs::{
     circuit::Value,
     circuit::{Layouter, SimpleFloorPlanner},
@@ -60,7 +61,7 @@ impl<F: ff::PrimeField, const SIZE: usize, const SIZE_SQRT: usize>
 
         // We check that the problem contains only symbols or `F::ZERO` entries
         if !problem.iter().all(|col| {
-            col.into_iter()
+            col.iter()
                 .all(|n| *n == F::ZERO || duplicate_detector.contains(n.to_repr().as_ref()))
         }) {
             return Err(());
@@ -68,7 +69,7 @@ impl<F: ff::PrimeField, const SIZE: usize, const SIZE_SQRT: usize>
 
         // We check that the solution only contains symbols
         if !solution.iter().all(|col| {
-            col.into_iter()
+            col.iter()
                 .all(|n| duplicate_detector.contains(n.to_repr().as_ref()))
         }) {
             return Err(());
@@ -315,7 +316,7 @@ impl<F: ff::PrimeField, const SIZE: usize, const SIZE_SQRT: usize> halo2_proofs:
                         |mut region| {
                             // For each permutation result, we constrain it to be equal to the loaded symbols.
                             for p_out in permutation_outputs.iter() {
-                                for (left, right) in p_out.into_iter().zip(symbol_cells.iter()) {
+                                for (left, right) in p_out.iter().zip(symbol_cells.iter()) {
                                     region.constrain_equal(left.cell(), right.cell())?;
                                 }
                             }
@@ -335,14 +336,14 @@ mod tests {
 
     use halo2_proofs::pasta::Fp;
 
-    type SurokuGrid = [[Fp; 9]; 9];
+    type SudokuGrid = [[Fp; 9]; 9];
 
     /// Helper function to generate symbols and a list of problems
     /// The return value is a tuple, laid out as
     /// `(symbols, impl Iterator<Item = (solution, problem)>)`
     fn setup_values(
         nr_random_masks_per_problem: usize,
-    ) -> ([Fp; 9], impl IntoIterator<Item = (SurokuGrid, SurokuGrid)>) {
+    ) -> ([Fp; 9], impl IntoIterator<Item = (SudokuGrid, SudokuGrid)>) {
         let (symbols, grids_iter) = numeric_setup_values(nr_random_masks_per_problem);
         let symbols = symbols.map(|n| Fp::from(n as u64));
 
@@ -450,6 +451,8 @@ mod tests {
     }
 
     #[test]
+    /// Test the sudoku circuit with the mock prover, which prints out errors and warnings.
+    /// We test all the sudoku problems in the test suite, with 10 random masks per problem.
     fn mock_sudoku() {
         use halo2_proofs::{dev::MockProver, pasta::Fp};
 
@@ -487,17 +490,19 @@ mod tests {
     }
 
     #[test]
+    /// Test the sudoku circuit with actual prover and verifier through the wrappers we implemented.
+    /// This is very similar to a real use case.
+    /// We test all the sudoku problems in the test suite, with 2 random masks per problem.
     fn sudoku() {
         use crate::utilities::{ProverWrapper, VerifierWrapper};
 
         const POW_OF_2_MAX_ROWS: u32 = 9;
 
         const NR_RANDOM_MASKS_PER_PROBLEM: usize = 2;
-        type TestCircuit = SudokuCircuit<Fp, 9, 3>;
 
         let (symbols, sudoku_problems) = setup_values(NR_RANDOM_MASKS_PER_PROBLEM);
 
-        let circuit_wiring = TestCircuit::circuit_wiring_from_symbols(symbols);
+        let circuit_wiring = SudokuCircuit::<Fp, 9, 3>::circuit_wiring_from_symbols(symbols);
 
         let mut prover =
             ProverWrapper::initialize_parameters_and_prover(POW_OF_2_MAX_ROWS, circuit_wiring)
@@ -514,8 +519,9 @@ mod tests {
         for ((solution, problem), instance_slices) in
             sudoku_problems.iter().zip(instance_slices.iter())
         {
-            let circuit = TestCircuit::try_new(problem.clone(), solution.clone(), symbols)
-                .expect("creation of circuit instance should not fail");
+            let circuit =
+                SudokuCircuit::<Fp, 9, 3>::try_new(problem.clone(), solution.clone(), symbols)
+                    .expect("creation of circuit instance should not fail");
 
             prover.add_item(circuit, instance_slices);
         }

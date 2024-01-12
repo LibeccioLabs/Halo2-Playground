@@ -33,7 +33,7 @@
 #[macro_export]
 macro_rules! iter_apply_macro {
     ($macro_name: path; $([$($seq: expr),+])+) => {
-        crate::_inner_iter_apply_macro!($macro_name; {} $([$($seq,)+])+);
+        $crate::_inner_iter_apply_macro!($macro_name; {} $([$($seq,)+])+);
     };
 }
 
@@ -46,7 +46,7 @@ macro_rules! _inner_iter_apply_macro {
         [$seq1_first: expr, $($seq1: expr,)*]
         $($other_seq: tt)*
     ) => {
-        crate::_inner_iter_apply_macro!(
+        $crate::_inner_iter_apply_macro!(
             $macro_name;
             {$($params_list,)* $seq1_first, }
             $($other_seq)*

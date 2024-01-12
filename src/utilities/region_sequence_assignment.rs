@@ -33,9 +33,9 @@ impl<E, T, const LEN: usize> TryFrom<Result<[T; LEN], E>> for ArrayWrap<T, LEN> 
     }
 }
 
-impl<T, const LEN: usize> Into<[T; LEN]> for ArrayWrap<T, LEN> {
-    fn into(self) -> [T; LEN] {
-        self.0
+impl<T, const LEN: usize> From<ArrayWrap<T, LEN>> for [T; LEN] {
+    fn from(val: ArrayWrap<T, LEN>) -> Self {
+        val.0
     }
 }
 

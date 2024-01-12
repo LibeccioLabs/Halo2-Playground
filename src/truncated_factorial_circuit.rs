@@ -3,7 +3,7 @@ use halo2_proofs::{
     plonk::{Column, Instance},
 };
 
-use super::Number;
+use crate::Number;
 
 #[derive(Default)]
 pub struct TruncatedFactorialCircuit<
@@ -145,6 +145,11 @@ mod tests {
     }
 
     #[test]
+    /// Test the factorial circuit with the mock prover, which prints out errors and warnings.
+    /// Given a number m, we prove that we know the product of the n numbers starting from it,
+    /// with n in range (1..=20).
+    /// If m is 1, as it is hard-coded here, we prove that we know the factorial of n.
+    /// The circuit is also tested against invalid witness values.
     fn mock_factorial_1_to_20() {
         const POW_OF_2_MAX_ROWS: u32 = 6;
 
@@ -235,6 +240,10 @@ mod tests {
     }
 
     #[test]
+    /// Test the factorial circuit with the mock prover, which prints out errors and warnings.
+    /// We test the product of 1000 numbers, variating the starting number, the number of columns in the circuit,
+    /// and the degree of the polynomial constraints imposed by the circuit.
+    /// This was done for performance testing, to figure out halo2's internals with a trial-and-error approach.
     fn mock_factorial_1000() {
         /// This macro exists because [`iter_apply_macro`] requires
         /// a macro argument. It mostly behaves like a generic function,
@@ -285,22 +294,23 @@ mod tests {
     }
 
     #[test]
+    /// Test the sudoku circuit with actual prover and verifier through the wrappers we implemented.
+    /// This is very similar to a real use case.
+    /// We prove that we know 1000! % m, where m is the maximum number Fp can represent.
     fn factorial() {
         const MAX_NR_ROWS_POW_2_EXPONENT: u32 = 4;
         const N_FACTORS: usize = 1000;
 
         use crate::utilities::{ProverWrapper, VerifierWrapper};
 
-        type TestCircuit = TruncatedFactorialCircuit<Fp, N_FACTORS, 20, 10>;
-
-        let circuit_wiring = TestCircuit::default();
+        let circuit_wiring = TruncatedFactorialCircuit::<Fp, N_FACTORS, 20, 10>::default();
 
         let mut prover = ProverWrapper::initialize_parameters_and_prover(
             MAX_NR_ROWS_POW_2_EXPONENT,
             circuit_wiring,
         )
         .expect("prover setup should not fail");
-        let circuit = TestCircuit::new(Fp::from(1));
+        let circuit = TruncatedFactorialCircuit::<Fp, N_FACTORS, 20, 10>::new(Fp::from(1));
 
         let instance = [(1..=N_FACTORS).fold(Fp::from(1), |acc, f| acc * Fp::from(f as u64))];
         let instance = [instance.as_slice()];

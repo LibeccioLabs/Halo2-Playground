@@ -1,10 +1,10 @@
-use super::permutation_chip::{PConfig, PermutationChip};
+use crate::{
+    permutation_chip::{PConfig, PermutationChip},
+    Number,
+};
 
-use super::Number;
-
-use halo2_proofs::circuit::{Chip, Layouter};
 use halo2_proofs::{
-    circuit::Value,
+    circuit::{Chip, Layouter, Value},
     plonk::{Column, ConstraintSystem, Error, Instance},
 };
 use try_collect::{ForceCollect, TryCollect, TryFromIterator};
@@ -149,12 +149,8 @@ impl<F: ff::Field, const N_OBJECTS: usize> halo2_proofs::plonk::Circuit<F>
         )?;
 
         let mut output_layouter = layouter.namespace(|| "public output assignment");
-        for idx in 0..N_OBJECTS {
-            output_layouter.constrain_instance(
-                permutation_cells[idx].0.cell(),
-                config.instance,
-                idx,
-            )?;
+        for (idx, cell) in permutation_cells.iter().enumerate().take(N_OBJECTS) {
+            output_layouter.constrain_instance(cell.0.cell(), config.instance, idx)?;
         }
 
         Ok(())
@@ -168,6 +164,8 @@ mod tests {
     use crate::utilities::{inverse_permutation, PermutationsIter};
 
     #[test]
+    /// Test the permutation circuit with the mock prover, which prints out errors and warnings.
+    /// We prove that every possible permutation of 7 items is correctly proved.
     fn mock_permutation() {
         use halo2_proofs::{dev::MockProver, pasta::Fp};
 
@@ -177,8 +175,7 @@ mod tests {
         for permutation in PermutationsIter::<7> {
             let circuit = PermutationCircuit::<Fp, 7>::new_unchecked(objects.clone(), permutation);
 
-            // The permutation output is equal to the permutation that is
-            // inverse to `permutation`
+            // The permutation output is equal to the permutation that is inverse to `permutation`
             let permutation_output =
                 Vec::from(inverse_permutation(permutation).map(|x| Fp::from(x as u64)));
 
@@ -190,14 +187,16 @@ mod tests {
     }
 
     #[test]
+    /// Test the permutation circuit with actual prover and verifier through the wrappers we implemented.
+    /// This is very similar to a real use case.
+    /// We prove that every possible permutation of 5 items is correctly proved.
     fn permutation() {
         use halo2_proofs::pasta::Fp;
 
         use crate::utilities::{ProverWrapper, VerifierWrapper};
 
         const N_OBJECTS: usize = 5;
-        const N_OBJECTS_FACTORIAL: usize = 120;
-        type TestCircuit = PermutationCircuit<Fp, N_OBJECTS>;
+        const FACTORIAL: usize = 120;
 
         /// This constant controls the maximum number of rows available in each circuit.
         /// If K is too low, the proof generation fails.
@@ -207,36 +206,40 @@ mod tests {
         /// Currently, we do not know if choosing a bigger value has advantages.
         const K: u32 = 4;
 
-        let objects: [Value<Fp>; 5] = core::array::from_fn(|n| Value::known(Fp::from(n as u64)));
+        let objects: [Value<Fp>; N_OBJECTS] =
+            core::array::from_fn(|n| Value::known(Fp::from(n as u64)));
 
-        let circuit_wiring = TestCircuit::default();
+        let circuit_wiring = PermutationCircuit::<Fp, N_OBJECTS>::default();
         let mut prover = ProverWrapper::initialize_parameters_and_prover(K, circuit_wiring)
             .expect("prover setup should not fail");
 
-        let instances: [[Fp; 5]; N_OBJECTS_FACTORIAL] = PermutationsIter::<5>
+        // For every circuit instance, we need to provide the set of public inputs of that instance.
+        // We have `FACTORIAL` instances, with one column per instance.
+        let instances: [[Fp; N_OBJECTS]; FACTORIAL] = PermutationsIter::<N_OBJECTS>
             .into_iter()
             .map(|permutation| inverse_permutation(permutation).map(|x| Fp::from(x as u64)))
             .f_collect("the number of items is correct");
-        let instance_slices: [[&[Fp]; 1]; N_OBJECTS_FACTORIAL] =
+        let instance_slices: [[&[Fp]; 1]; FACTORIAL] =
             core::array::from_fn(|i| [instances[i].as_slice()]);
 
         for (instance, permutation) in instance_slices.iter().zip(PermutationsIter::<5>) {
-            let circuit = TestCircuit::new_unchecked(objects.clone(), permutation);
+            let circuit =
+                PermutationCircuit::<Fp, N_OBJECTS>::new_unchecked(objects.clone(), permutation);
 
             prover.add_item(circuit, instance.as_slice());
         }
 
         let transcript = crate::time_it! {
-                "The proving time of 120 5-items permutations with an actual prover is {:?}",
-                prover.prove().expect("proof generation should not fail")
+            "The proving time of 120 5-items permutations with an actual prover is {:?}",
+            prover.prove().expect("proof generation should not fail")
         };
-
-        let mut verifier = VerifierWrapper::from(prover);
 
         println!(
             "The aggregated proof's length is {} bytes",
             transcript.len()
         );
+
+        let mut verifier = VerifierWrapper::from(prover);
 
         crate::time_it! {
             "And the verification time with an actual verifier is {:?}",

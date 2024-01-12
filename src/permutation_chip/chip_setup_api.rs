@@ -15,7 +15,7 @@ impl<const N_OBJECTS: usize, F: ff::Field> PermutationChip<N_OBJECTS, F> {
     ) -> Result<[Number<F>; N_OBJECTS], Error> {
         layouter.assign_region(
             || "load input",
-            |region| apply_permutation_region_assignment(&self, &input_items, permutation, region),
+            |region| apply_permutation_region_assignment(self, &input_items, permutation, region),
         )
     }
 }
@@ -23,19 +23,19 @@ impl<const N_OBJECTS: usize, F: ff::Field> PermutationChip<N_OBJECTS, F> {
 /// A helper function to be used in
 /// `PermutationChip::<N_OBJECTS, F>::apply_permutation`.
 /// Its main purpose is to increase readability by reducing indentation.
-fn apply_permutation_region_assignment<'a, const N_OBJECTS: usize, F: ff::Field>(
+fn apply_permutation_region_assignment<const N_OBJECTS: usize, F: ff::Field>(
     chip: &PermutationChip<N_OBJECTS, F>,
     input_items: &[Number<F>; N_OBJECTS],
     permutation: [usize; N_OBJECTS],
-    mut region: Region<'a, F>,
+    mut region: Region<'_, F>,
 ) -> Result<[Number<F>; N_OBJECTS], Error> {
     // We enable the selector gate that activates all the constraints in
     // the permutation chip.
     chip.config.s_perm.enable(&mut region, 0)?;
 
     // We load the input cells in the first row of the region.
-    for idx in 0..N_OBJECTS {
-        input_items[idx].copy_advice(
+    for (idx, input_item) in input_items.iter().enumerate().take(N_OBJECTS) {
+        input_item.copy_advice(
             || "input items",
             &mut region,
             chip.config.item_columns[idx],

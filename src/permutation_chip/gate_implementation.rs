@@ -14,7 +14,7 @@ impl<const N_OBJECTS: usize, F: ff::Field> PermutationChip<N_OBJECTS, F> {
         swap_selector_columns: Vec<Column<Advice>>,
     ) -> <Self as halo2_proofs::circuit::Chip<F>>::Config {
         assert!(
-            swap_selector_columns.len() > 0,
+            !swap_selector_columns.is_empty(),
             "At least one column to allocate swap selectors is needed."
         );
 
@@ -25,10 +25,8 @@ impl<const N_OBJECTS: usize, F: ff::Field> PermutationChip<N_OBJECTS, F> {
         let s_perm = meta.selector();
 
         // The initial position of input items.
-        let mut output_item_positions: [_; N_OBJECTS] = (0..N_OBJECTS)
-            .into_iter()
-            .map(|idx| (item_columns[idx], Rotation::cur()))
-            .f_collect("The number items is correct");
+        let mut output_item_positions: [_; N_OBJECTS] =
+            core::array::from_fn(|idx| (item_columns[idx], Rotation::cur()));
 
         meta.create_gate("object permutation", |meta| {
             let mut constraints = vec![];

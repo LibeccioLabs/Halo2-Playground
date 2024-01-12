@@ -29,9 +29,8 @@ impl<const N_OBJECTS: usize> Default for KnuthL<N_OBJECTS> {
 impl<const N_OBJECTS: usize> Iterator for KnuthL<N_OBJECTS> {
     type Item = [usize; N_OBJECTS];
     fn next(&mut self) -> Option<Self::Item> {
-        if self.0 == None {
-            return None;
-        }
+        self.0?; // return None if None
+
         // Copy the current state, as return value.
         let current = self.0;
 
@@ -47,7 +46,7 @@ impl<const N_OBJECTS: usize> Iterator for KnuthL<N_OBJECTS> {
             .find(|&j| array[j] <= array[j + 1]);
 
         // The last permutation we yield is [N_OBJECTS - 1, N_OBJECTS - 2, ..., 1, 0]
-        if j == None {
+        if j.is_none() {
             self.0 = None;
             return current;
         }

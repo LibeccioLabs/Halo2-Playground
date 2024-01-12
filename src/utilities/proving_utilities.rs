@@ -121,7 +121,7 @@ impl<C: Circuit<Fp>> VerifierWrapper<C> {
         instances: I,
         transcript: &[u8],
     ) -> bool {
-        let instances = Vec::from_iter(instances.into_iter());
+        let instances = Vec::from_iter(instances);
 
         let mut transcript = Blake2bRead::init(transcript);
         let strategy = SingleVerifier::new(&self.public_parameters);
